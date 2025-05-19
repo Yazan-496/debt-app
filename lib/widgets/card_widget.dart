@@ -5,7 +5,7 @@ import '../providers/language_provider.dart';
 class CardWidget extends StatelessWidget {
   final String title;
   final String userName;
-  final String material;
+  final String item;
   final num quantity;
   final num price;
   final String currencySymbol;
@@ -18,7 +18,7 @@ class CardWidget extends StatelessWidget {
     super.key,
     required this.title,
     required this.userName,
-    required this.material,
+    required this.item,
     required this.quantity,
     required this.price,
     required this.currencySymbol,
@@ -86,8 +86,8 @@ class CardWidget extends StatelessWidget {
               isTotal: false,
             ),
             _buildInfoRow(
-              languageProvider.translate('debts.material'),
-              material,
+              languageProvider.translate('debts.item'),
+              item,
               isOwned: isOwed,
               isTotal: false,
             ),

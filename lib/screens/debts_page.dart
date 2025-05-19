@@ -5,14 +5,14 @@ import '../providers/language_provider.dart';
 import '../database/database_helper.dart';
 import '../widgets/table_widget.dart';
 import '../widgets/dialog_widget.dart';
+import '../utils/number_formatter.dart';
 import 'package:provider/provider.dart';
 
 class _EditDebtDialog extends StatefulWidget {
   final String title;
-  final String detailsLabel;
   final String nameLabel;
   final String phoneLabel;
-  final String materialLabel;
+  final String itemLabel;
   final String quantityLabel;
   final String priceLabel;
   final String currencyLabel;
@@ -25,10 +25,9 @@ class _EditDebtDialog extends StatefulWidget {
 
   const _EditDebtDialog({
     required this.title,
-    required this.detailsLabel,
     required this.nameLabel,
     required this.phoneLabel,
-    required this.materialLabel,
+    required this.itemLabel,
     required this.quantityLabel,
     required this.priceLabel,
     required this.currencyLabel,
@@ -45,10 +44,9 @@ class _EditDebtDialog extends StatefulWidget {
 }
 
 class _EditDebtDialogState extends State<_EditDebtDialog> {
-  late final TextEditingController _detailsController;
   late final TextEditingController _nameController;
   late final TextEditingController _phoneController;
-  late final TextEditingController _materialController;
+  late final TextEditingController _itemController;
   late final TextEditingController _quantityController;
   late final TextEditingController _priceController;
   late final GlobalKey<FormState> _formKey;
@@ -56,37 +54,75 @@ class _EditDebtDialogState extends State<_EditDebtDialog> {
   int _selectedCurrencyId = 1;
   List<Map<String, dynamic>> _currencies = [];
   List<Map<String, dynamic>> _users = [];
+  List<Map<String, dynamic>> _items = [];
   int? _selectedUserId;
   bool _isNewUser = false;
+  bool _isNewItem = false;
+  int? _selectedItemId;
   late final TextEditingController _searchController;
+  final DatabaseHelper _dbHelper = DatabaseHelper();
+  bool _isFormSubmitted = false;
+  late LanguageProvider _languageProvider;
+  String? _itemErrorText;
+  String? _nameErrorText;
 
   @override
   void initState() {
     super.initState();
-    _detailsController = TextEditingController(
-      text: widget.initialDebt?['details'] ?? '',
-    );
+    _languageProvider = Provider.of<LanguageProvider>(context, listen: false);
+    print('=== Edit Debt Dialog Initial Values ===');
+    print('Initial Debt: ${widget.initialDebt}');
+    print('User ID: ${widget.userId}');
+    print('User Name: ${widget.userName}');
+
     _nameController = TextEditingController(
       text: widget.initialDebt?['user_name'] ?? widget.userName ?? '',
     );
+    print('Name Controller Text: ${_nameController.text}');
+
     _phoneController = TextEditingController(
       text: widget.initialDebt?['phone'] ?? '',
     );
-    _materialController = TextEditingController(
-      text: widget.initialDebt?['material'] ?? '',
+    print('Phone Controller Text: ${_phoneController.text}');
+
+    _itemController = TextEditingController(
+      text: widget.initialDebt?['item'] ?? '',
     );
+    print('Item Controller Text: ${_itemController.text}');
+
     _quantityController = TextEditingController(
       text: widget.initialDebt?['quantity']?.toString() ?? '',
     );
+    print('Quantity Controller Text: ${_quantityController.text}');
+
     _priceController = TextEditingController(
       text: widget.initialDebt?['price']?.toString() ?? '',
     );
+    print('Price Controller Text: ${_priceController.text}');
+
     _isOwed = widget.initialDebt?['is_owed'] == 1;
+    print('Is Owed: $_isOwed');
+
     _selectedCurrencyId = widget.initialDebt?['currency_id'] ?? 1;
+    print('Selected Currency ID: $_selectedCurrencyId');
+
+    _selectedItemId = widget.initialDebt?['item_id'];
+    print('Selected Item ID: $_selectedItemId');
+
+    _isNewItem = widget.initialDebt?['item_id'] == null;
+    print('Is New Item: $_isNewItem');
+
     _formKey = GlobalKey<FormState>();
-    _loadCurrencies();
-    _loadUsers();
     _searchController = TextEditingController();
+
+    // Load data in sequence
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    await _loadCurrencies();
+    await _loadUsers();
+    await _loadItems();
   }
 
   Future<void> _loadUsers() async {
@@ -116,30 +152,154 @@ class _EditDebtDialogState extends State<_EditDebtDialog> {
     }
   }
 
-  void _handleUserSelection(int? userId) {
+  Future<void> _loadItems() async {
+    final items = await _dbHelper.getItems();
+    print('=== Loading Items ===');
+    print(
+      'Available Items: ${items.map((i) => '${i['id']}: ${i['name']}').join(', ')}',
+    );
+
+    if (mounted) {
+      setState(() {
+        _items = items;
+        if (widget.initialDebt != null) {
+          print('Processing initial debt item:');
+          print('Item ID from debt: ${widget.initialDebt?['item_id']}');
+          print('Item name from debt: ${widget.initialDebt?['item']}');
+
+          // If we have an item_id, find the item and set its name
+          if (widget.initialDebt?['item_id'] != null) {
+            final item = items.firstWhere(
+              (item) => item['id'] == widget.initialDebt?['item_id'],
+              orElse:
+                  () => {'id': null, 'name': widget.initialDebt?['item'] ?? ''},
+            );
+            print('Found item by ID: ${item['id']}: ${item['name']}');
+
+            _selectedItemId = item['id'];
+            _isNewItem = false;
+            _itemController.text =
+                item['name'] ?? widget.initialDebt?['item'] ?? '';
+            print('Set item controller text to: ${_itemController.text}');
+          } else if (widget.initialDebt?['item'] != null) {
+            // If no item_id but we have an item name, try to find it
+            final existingItem = items.firstWhere(
+              (item) => item['name'] == widget.initialDebt?['item'],
+              orElse: () => {'id': null, 'name': ''},
+            );
+            print(
+              'Found item by name: ${existingItem['id']}: ${existingItem['name']}',
+            );
+
+            if (existingItem['id'] != null) {
+              _selectedItemId = existingItem['id'];
+              _isNewItem = false;
+              _itemController.text = existingItem['name'] ?? '';
+              print('Set item controller text to: ${_itemController.text}');
+            } else {
+              _selectedItemId = null;
+              _isNewItem = true;
+              _itemController.text = widget.initialDebt?['item'] ?? '';
+              print(
+                'Set item controller text to: ${_itemController.text} (new item)',
+              );
+            }
+          }
+        }
+      });
+    }
+  }
+
+  void _handleItemSelection(Map<String, dynamic>? item) {
+    if (item == null) {
+      setState(() {
+        _isNewItem = true;
+        _selectedItemId = null;
+        _itemController.text = '';
+        _priceController.text = '';
+      });
+      return;
+    }
+
     setState(() {
-      _selectedUserId = userId;
-      _isNewUser = userId == null;
-      if (!_isNewUser) {
-        final selectedUser = _users.firstWhere(
-          (user) => user['id'] == userId,
-          orElse: () => {'name': '', 'phone': ''},
-        );
-        _nameController.text = selectedUser['name'] ?? '';
-        _phoneController.text = selectedUser['phone'] ?? '';
-      } else {
-        _nameController.text = '';
-        _phoneController.text = '';
-      }
+      _isNewItem = false;
+      _selectedItemId = item['id'];
+      _itemController.text = item['name'];
+
+      // Find the price for the selected currency
+      final price = item['prices'].firstWhere(
+        (p) => p['currency_id'] == _selectedCurrencyId,
+        orElse: () => {'price': 0.0},
+      );
+      _priceController.text = price['price'].toString();
     });
+  }
+
+  Future<void> _handleNewItemSave() async {
+    if (_itemController.text.isEmpty) return;
+
+    try {
+      // Create a new item with the current price
+      final itemData = {
+        'name': _itemController.text,
+        'prices':
+            _currencies
+                .map(
+                  (currency) => {
+                    'currency_id': currency['id'],
+                    'price':
+                        currency['id'] == _selectedCurrencyId
+                            ? double.tryParse(_priceController.text) ?? 0.0
+                            : 0.0,
+                  },
+                )
+                .toList(),
+      };
+
+      final itemId = await _dbHelper.insertItem(itemData);
+
+      // Reload items to get the new one
+      await _loadItems();
+
+      // Select the newly created item
+      final newItem = _items.firstWhere((item) => item['id'] == itemId);
+      _handleItemSelection(newItem);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error saving new item: $e')));
+      }
+    }
+  }
+
+  String? _validateField(String? value, String fieldName) {
+    if (!_isFormSubmitted) return null;
+    if (value == null || value.isEmpty) {
+      return _languageProvider.translate('common.required_field');
+    }
+    if (fieldName == 'quantity' || fieldName == 'price') {
+      if (double.tryParse(value) == null) {
+        return _languageProvider.translate('common.invalid_number');
+      }
+    }
+    return null;
+  }
+
+  void _handleFieldChange(String value, String fieldName) {
+    if (_isFormSubmitted) {
+      setState(() {
+        // Revalidate the form when user types
+        _formKey.currentState?.validate();
+      });
+    }
   }
 
   @override
   void dispose() {
-    _detailsController.dispose();
     _nameController.dispose();
     _phoneController.dispose();
-    _materialController.dispose();
+    _itemController.dispose();
     _quantityController.dispose();
     _priceController.dispose();
     _searchController.dispose();
@@ -148,7 +308,6 @@ class _EditDebtDialogState extends State<_EditDebtDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final languageProvider = Provider.of<LanguageProvider>(context);
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 20.0),
       child: Container(
@@ -177,26 +336,6 @@ class _EditDebtDialogState extends State<_EditDebtDialog> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    TextFormField(
-                      controller: _detailsController,
-                      decoration: InputDecoration(
-                        labelText: widget.detailsLabel,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Required';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
                     if (widget.userId == null &&
                         widget.initialDebt == null) ...[
                       Autocomplete<String>(
@@ -224,14 +363,20 @@ class _EditDebtDialogState extends State<_EditDebtDialog> {
                               _nameController.text = selectedUser['name'] ?? '';
                               _phoneController.text =
                                   selectedUser['phone'] ?? '';
+                              _nameErrorText = null;
                             });
+                            // Trigger validation after selection
+                            _formKey.currentState?.validate();
                           } else {
                             setState(() {
                               _isNewUser = true;
                               _selectedUserId = null;
                               _nameController.text = selection;
                               _phoneController.text = '';
+                              _nameErrorText = null;
                             });
+                            // Trigger validation after selection
+                            _formKey.currentState?.validate();
                           }
                         },
                         fieldViewBuilder: (
@@ -243,8 +388,9 @@ class _EditDebtDialogState extends State<_EditDebtDialog> {
                           return TextFormField(
                             controller: textEditingController,
                             focusNode: focusNode,
+                            textDirection: TextDirection.rtl,
                             decoration: InputDecoration(
-                              labelText: languageProvider.translate(
+                              labelText: _languageProvider.translate(
                                 'users.name',
                               ),
                               border: OutlineInputBorder(
@@ -254,29 +400,56 @@ class _EditDebtDialogState extends State<_EditDebtDialog> {
                                 horizontal: 16,
                                 vertical: 12,
                               ),
-                              suffixIcon:
-                                  _selectedUserId != null
-                                      ? IconButton(
-                                        icon: const Icon(Icons.clear),
-                                        onPressed: () {
-                                          setState(() {
-                                            _isNewUser = true;
-                                            _selectedUserId = null;
-                                            textEditingController.clear();
-                                            _nameController.text = '';
-                                            _phoneController.text = '';
-                                          });
-                                        },
-                                      )
-                                      : null,
+                              errorText:
+                                  _isFormSubmitted ? _nameErrorText : null,
                             ),
                             onChanged: (value) {
-                              setState(() {
-                                _isNewUser = true;
-                                _selectedUserId = null;
-                                _nameController.text = value;
-                                _phoneController.text = '';
-                              });
+                              // Check if the entered value matches an existing user
+                              final existingUser = _users.firstWhere(
+                                (user) =>
+                                    user['name'].trim().toLowerCase() ==
+                                    value.trim().toLowerCase(),
+                                orElse: () => {'id': null},
+                              );
+
+                              if (existingUser['id'] != null) {
+                                setState(() {
+                                  _isNewUser = false;
+                                  _selectedUserId = existingUser['id'];
+                                  _nameController.text = value;
+                                  _phoneController.text =
+                                      existingUser['phone'] ?? '';
+                                });
+                              } else {
+                                setState(() {
+                                  _isNewUser = true;
+                                  _selectedUserId = null;
+                                  _nameController.text = value;
+                                  _phoneController.text = '';
+                                  _nameErrorText =
+                                      null; // Clear error for new name
+                                });
+                              }
+                              // Trigger validation after change
+                              _formKey.currentState?.validate();
+                            },
+                            validator: (value) {
+                              if (_isFormSubmitted && _selectedUserId == null) {
+                                // Check if the entered value matches an existing user
+                                final existingUser = _users.firstWhere(
+                                  (user) =>
+                                      user['name'].trim().toLowerCase() ==
+                                      value?.trim().toLowerCase(),
+                                  orElse: () => {'id': null},
+                                );
+
+                                if (existingUser['id'] != null) {
+                                  return _languageProvider.translate(
+                                    'users.name_already_exists',
+                                  );
+                                }
+                              }
+                              return _validateField(value, 'name');
                             },
                           );
                         },
@@ -286,32 +459,38 @@ class _EditDebtDialogState extends State<_EditDebtDialog> {
                           Iterable<String> options,
                         ) {
                           return Align(
-                            alignment: Alignment.topLeft,
+                            alignment: Alignment.topRight,
                             child: Material(
                               elevation: 4.0,
-                              child: Container(
+                              child: ConstrainedBox(
                                 constraints: BoxConstraints(
+                                  maxWidth:
+                                      MediaQuery.of(context).size.width -
+                                      40, // Modal width (screen width - padding)
                                   maxHeight:
                                       MediaQuery.of(context).size.height * 0.3,
                                 ),
-                                child: ListView.builder(
-                                  padding: EdgeInsets.zero,
-                                  shrinkWrap: true,
-                                  itemCount: options.length,
-                                  itemBuilder: (
-                                    BuildContext context,
-                                    int index,
-                                  ) {
-                                    final String option = options.elementAt(
-                                      index,
-                                    );
-                                    return ListTile(
-                                      title: Text(option),
-                                      onTap: () {
-                                        onSelected(option);
-                                      },
-                                    );
-                                  },
+                                child: SizedBox(
+                                  width: MediaQuery.of(context).size.width - 80,
+                                  child: ListView.builder(
+                                    padding: EdgeInsets.zero,
+                                    shrinkWrap: true,
+                                    itemCount: options.length,
+                                    itemBuilder: (
+                                      BuildContext context,
+                                      int index,
+                                    ) {
+                                      final String option = options.elementAt(
+                                        index,
+                                      );
+                                      return ListTile(
+                                        title: Text(option),
+                                        onTap: () {
+                                          onSelected(option);
+                                        },
+                                      );
+                                    },
+                                  ),
                                 ),
                               ),
                             ),
@@ -322,6 +501,7 @@ class _EditDebtDialogState extends State<_EditDebtDialog> {
                       TextFormField(
                         controller: _phoneController,
                         enabled: _isNewUser,
+                        textDirection: TextDirection.ltr,
                         decoration: InputDecoration(
                           labelText: widget.phoneLabel,
                           border: OutlineInputBorder(
@@ -343,31 +523,196 @@ class _EditDebtDialogState extends State<_EditDebtDialog> {
                       ),
                       const SizedBox(height: 16),
                     ],
-                    TextFormField(
-                      controller: _materialController,
-                      decoration: InputDecoration(
-                        labelText: widget.materialLabel,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Required';
+                    Autocomplete<String>(
+                      optionsBuilder: (TextEditingValue textEditingValue) {
+                        if (textEditingValue.text.isEmpty) {
+                          return const Iterable<String>.empty();
                         }
-                        return null;
+                        return _items
+                            .map((item) => item['name'] as String)
+                            .where(
+                              (name) => name.toLowerCase().contains(
+                                textEditingValue.text.toLowerCase(),
+                              ),
+                            );
+                      },
+                      onSelected: (String selection) {
+                        final selectedItem = _items.firstWhere(
+                          (item) => item['name'] == selection,
+                          orElse: () => {'id': null, 'name': '', 'prices': []},
+                        );
+                        if (selectedItem['id'] != null) {
+                          setState(() {
+                            _isNewItem = false;
+                            _selectedItemId = selectedItem['id'];
+                            _itemController.text = selectedItem['name'] ?? '';
+                            final price = selectedItem['prices'].firstWhere(
+                              (p) => p['currency_id'] == _selectedCurrencyId,
+                              orElse: () => {'price': 0.0},
+                            );
+                            _priceController.text = price['price'].toString();
+                            _itemErrorText = null;
+                          });
+                          // Trigger validation after selection
+                          _formKey.currentState?.validate();
+                        } else {
+                          setState(() {
+                            _isNewItem = true;
+                            _selectedItemId = null;
+                            _itemController.text = selection;
+                            _priceController.text = '';
+                            _itemErrorText = null;
+                          });
+                          _formKey.currentState?.validate();
+                        }
+                      },
+                      fieldViewBuilder: (
+                        BuildContext context,
+                        TextEditingController textEditingController,
+                        FocusNode focusNode,
+                        VoidCallback onFieldSubmitted,
+                      ) {
+                        // Initialize the textEditingController with the current value from _itemController
+                        if (textEditingController.text.isEmpty &&
+                            _itemController.text.isNotEmpty) {
+                          textEditingController.text = _itemController.text;
+                        }
+                        return TextFormField(
+                          controller:
+                              _itemController, // Use _itemController instead of textEditingController
+                          focusNode: focusNode,
+                          textDirection: TextDirection.rtl,
+                          decoration: InputDecoration(
+                            labelText: widget.itemLabel,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            errorText: _itemErrorText,
+                          ),
+                          onChanged: (value) {
+                            // Check if the entered value matches an existing item
+                            final existingItem = _items.firstWhere(
+                              (item) =>
+                                  item['name'].trim().toLowerCase() ==
+                                  value.trim().toLowerCase(),
+                              orElse: () => {'id': null},
+                            );
+
+                            if (existingItem['id'] != null) {
+                              setState(() {
+                                _isNewItem = false;
+                                _selectedItemId = existingItem['id'];
+                                _itemController.text = value;
+                                final price = existingItem['prices'].firstWhere(
+                                  (p) =>
+                                      p['currency_id'] == _selectedCurrencyId,
+                                  orElse: () => {'price': 0.0},
+                                );
+                                _priceController.text =
+                                    price['price'].toString();
+                                _itemErrorText = null;
+                              });
+                            } else {
+                              setState(() {
+                                _isNewItem = true;
+                                _selectedItemId = null;
+                                _itemController.text = value;
+                                _priceController.text = '';
+                                _itemErrorText = null;
+                              });
+                            }
+                            _formKey.currentState?.validate();
+                          },
+                          validator: (value) {
+                            if (_isFormSubmitted && _selectedItemId == null) {
+                              // Check if the entered value matches an existing item
+                              final existingItem = _items.firstWhere(
+                                (item) =>
+                                    item['name'].trim().toLowerCase() ==
+                                    value?.trim().toLowerCase(),
+                                orElse: () => {'id': null},
+                              );
+
+                              if (existingItem['id'] != null) {
+                                return _languageProvider.translate(
+                                  'items.name_already_exists',
+                                );
+                              }
+                            }
+                            return _validateField(value, 'item');
+                          },
+                        );
+                      },
+                      optionsViewBuilder: (
+                        BuildContext context,
+                        AutocompleteOnSelected<String> onSelected,
+                        Iterable<String> options,
+                      ) {
+                        return Align(
+                          alignment: Alignment.topRight,
+                          child: Material(
+                            elevation: 4.0,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth:
+                                    MediaQuery.of(context).size.width - 40,
+                                maxHeight:
+                                    MediaQuery.of(context).size.height * 0.3,
+                              ),
+                              child: SizedBox(
+                                width: MediaQuery.of(context).size.width - 80,
+                                child: ListView.builder(
+                                  padding: EdgeInsets.zero,
+                                  shrinkWrap: true,
+                                  itemCount: options.length,
+                                  itemBuilder: (
+                                    BuildContext context,
+                                    int index,
+                                  ) {
+                                    final String option = options.elementAt(
+                                      index,
+                                    );
+                                    final item = _items.firstWhere(
+                                      (item) => item['name'] == option,
+                                      orElse: () => {'prices': []},
+                                    );
+                                    final price = item['prices'].firstWhere(
+                                      (p) =>
+                                          p['currency_id'] ==
+                                          _selectedCurrencyId,
+                                      orElse:
+                                          () => {'price': 0.0, 'symbol': 'SP'},
+                                    );
+                                    return ListTile(
+                                      title: Text(
+                                        option,
+                                        textDirection: TextDirection.rtl,
+                                      ),
+                                      subtitle: Text(
+                                        '${NumberFormatter.formatPrice(price['price'])} ${price['symbol']}',
+                                        textDirection: TextDirection.ltr,
+                                      ),
+                                      onTap: () => onSelected(option),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
                       },
                     ),
-                    SizedBox(height: 16),
+                    const SizedBox(height: 16),
                     Row(
                       children: [
                         Expanded(
                           child: TextFormField(
                             controller: _quantityController,
+                            textDirection: TextDirection.ltr,
                             decoration: InputDecoration(
                               labelText: widget.quantityLabel,
                               border: OutlineInputBorder(
@@ -378,22 +723,21 @@ class _EditDebtDialogState extends State<_EditDebtDialog> {
                                 vertical: 12,
                               ),
                             ),
-                            keyboardType: TextInputType.number,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'Required';
-                              }
-                              if (int.tryParse(value) == null) {
-                                return 'Please enter a valid number';
-                              }
-                              return null;
-                            },
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            onChanged:
+                                (value) =>
+                                    _handleFieldChange(value, 'quantity'),
+                            validator:
+                                (value) => _validateField(value, 'quantity'),
                           ),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
                           child: TextFormField(
                             controller: _priceController,
+                            textDirection: TextDirection.ltr,
                             decoration: InputDecoration(
                               labelText: widget.priceLabel,
                               border: OutlineInputBorder(
@@ -404,21 +748,18 @@ class _EditDebtDialogState extends State<_EditDebtDialog> {
                                 vertical: 12,
                               ),
                             ),
-                            keyboardType: TextInputType.number,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'Required';
-                              }
-                              if (int.tryParse(value) == null) {
-                                return 'Please enter a valid number';
-                              }
-                              return null;
-                            },
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            onChanged:
+                                (value) => _handleFieldChange(value, 'price'),
+                            validator:
+                                (value) => _validateField(value, 'price'),
                           ),
                         ),
                       ],
                     ),
-                    SizedBox(height: 16),
+                    const SizedBox(height: 16),
                     Row(
                       children: [
                         Expanded(
@@ -446,11 +787,30 @@ class _EditDebtDialogState extends State<_EditDebtDialog> {
                             onChanged: (value) {
                               setState(() {
                                 _selectedCurrencyId = value!;
+                                // Update price if an item is selected
+                                if (_selectedItemId != null) {
+                                  final selectedItem = _items.firstWhere(
+                                    (item) => item['id'] == _selectedItemId,
+                                  );
+                                  final price = selectedItem['prices']
+                                      .firstWhere(
+                                        (p) => p['currency_id'] == value,
+                                        orElse: () => {'price': 0.0},
+                                      );
+                                  _priceController.text =
+                                      price['price'].toString();
+                                }
                               });
+                              // Clear validation error when selection changes
+                              if (_formKey.currentState != null) {
+                                _formKey.currentState!.validate();
+                              }
                             },
                             validator: (value) {
                               if (value == null) {
-                                return 'Required';
+                                return _languageProvider.translate(
+                                  'common.required_field',
+                                );
                               }
                               return null;
                             },
@@ -461,7 +821,7 @@ class _EditDebtDialogState extends State<_EditDebtDialog> {
                           child: Row(
                             children: [
                               Text(
-                                languageProvider.translate('debts.is_owed'),
+                                _languageProvider.translate('debts.is_owed'),
                                 style: const TextStyle(fontSize: 16),
                               ),
                               const Spacer(),
@@ -503,17 +863,25 @@ class _EditDebtDialogState extends State<_EditDebtDialog> {
                         vertical: 12,
                       ),
                     ),
-                    onPressed: () {
+                    onPressed: () async {
+                      setState(() {
+                        _isFormSubmitted = true;
+                      });
                       if (_formKey.currentState!.validate()) {
+                        // If it's a new item, save it first
+                        if (_isNewItem && _itemController.text.isNotEmpty) {
+                          await _handleNewItemSave();
+                        }
+
                         final debt = {
-                          'details': _detailsController.text,
                           'name': _nameController.text,
                           'phone': _phoneController.text,
-                          'material': _materialController.text,
-                          'quantity': int.parse(_quantityController.text),
-                          'price': int.parse(_priceController.text),
+                          'item_id': _selectedItemId,
+                          'quantity': double.parse(_quantityController.text),
+                          'price': double.parse(_priceController.text),
                           'is_owed': _isOwed ? 1 : 0,
                           'currency_id': _selectedCurrencyId,
+                          'details': '', // Optional details field
                         };
                         widget.onSave(debt);
                         Navigator.of(context).pop();
@@ -546,7 +914,7 @@ class _DebtsPageState extends State<DebtsPage> {
   late TextEditingController _detailsController;
   late TextEditingController _nameController;
   late TextEditingController _phoneController;
-  late TextEditingController _materialController;
+  late TextEditingController _itemController;
   late TextEditingController _quantityController;
   late TextEditingController _priceController;
   final DatabaseHelper _dbHelper = DatabaseHelper();
@@ -574,7 +942,7 @@ class _DebtsPageState extends State<DebtsPage> {
     _detailsController = TextEditingController();
     _nameController = TextEditingController();
     _phoneController = TextEditingController();
-    _materialController = TextEditingController();
+    _itemController = TextEditingController();
     _quantityController = TextEditingController();
     _priceController = TextEditingController();
   }
@@ -583,7 +951,7 @@ class _DebtsPageState extends State<DebtsPage> {
     _detailsController.dispose();
     _nameController.dispose();
     _phoneController.dispose();
-    _materialController.dispose();
+    _itemController.dispose();
     _quantityController.dispose();
     _priceController.dispose();
   }
@@ -657,7 +1025,7 @@ class _DebtsPageState extends State<DebtsPage> {
     final detailsLabel = languageProvider.translate('debts.details');
     final nameLabel = languageProvider.translate('debts.name');
     final phoneLabel = languageProvider.translate('users.phone');
-    final materialLabel = languageProvider.translate('debts.material');
+    final itemLabel = languageProvider.translate('debts.item');
     final quantityLabel = languageProvider.translate('debts.quantity');
     final priceLabel = languageProvider.translate('debts.price');
     final currencyLabel = languageProvider.translate('debts.currency');
@@ -694,10 +1062,9 @@ class _DebtsPageState extends State<DebtsPage> {
       builder:
           (context) => _EditDebtDialog(
             title: title,
-            detailsLabel: detailsLabel,
             nameLabel: nameLabel,
             phoneLabel: phoneLabel,
-            materialLabel: materialLabel,
+            itemLabel: itemLabel,
             quantityLabel: quantityLabel,
             priceLabel: priceLabel,
             currencyLabel: currencyLabel,
@@ -730,7 +1097,8 @@ class _DebtsPageState extends State<DebtsPage> {
                     });
                   } else {
                     userId = selectedUser['id'];
-                    if (selectedUser['phone'] != debt['phone']) {
+                    if (debt['phone'].isNotEmpty &&
+                        selectedUser['phone'] != debt['phone']) {
                       await _dbHelper.updateUser(userId, {
                         'phone': debt['phone'],
                       });
@@ -741,7 +1109,7 @@ class _DebtsPageState extends State<DebtsPage> {
                 final debtData = {
                   'details': debt['details'],
                   'user_id': userId,
-                  'material': debt['material'],
+                  'item_id': debt['item_id'],
                   'quantity': debt['quantity'],
                   'price': debt['price'],
                   'is_owed': debt['is_owed'],
@@ -897,7 +1265,7 @@ class _DebtsPageState extends State<DebtsPage> {
         return CardWidget(
           title: debt['details'],
           userName: debt['user_name'],
-          material: debt['material'],
+          item: debt['item'],
           quantity: quantity,
           price: price,
           currencySymbol: debt['currency_symbol'] ?? 'SP',
@@ -928,17 +1296,6 @@ class _DebtsPageState extends State<DebtsPage> {
                     label: SizedBox(
                       width: columnWidth,
                       child: Text(
-                        languageProvider.translate('debts.details'),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 2,
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                  DataColumn(
-                    label: SizedBox(
-                      width: columnWidth,
-                      child: Text(
                         languageProvider.translate('debts.name'),
                         overflow: TextOverflow.ellipsis,
                         maxLines: 2,
@@ -950,7 +1307,7 @@ class _DebtsPageState extends State<DebtsPage> {
                     label: SizedBox(
                       width: columnWidth,
                       child: Text(
-                        languageProvider.translate('debts.material'),
+                        languageProvider.translate('debts.item'),
                         overflow: TextOverflow.ellipsis,
                         maxLines: 2,
                         textAlign: TextAlign.center,
@@ -994,6 +1351,17 @@ class _DebtsPageState extends State<DebtsPage> {
                     label: SizedBox(
                       width: columnWidth,
                       child: Text(
+                        languageProvider.translate('common.created_at'),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 2,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                  DataColumn(
+                    label: SizedBox(
+                      width: columnWidth,
+                      child: Text(
                         languageProvider.translate('debts.actions'),
                         overflow: TextOverflow.ellipsis,
                         maxLines: 2,
@@ -1021,20 +1389,13 @@ class _DebtsPageState extends State<DebtsPage> {
                       final totalPrice = quantity * price;
                       final currencySymbol = debt['currency_symbol'] ?? 'SP';
                       final isOwed = debt['is_owed'] == 1;
+                      final createdAt =
+                          debt['created_at'] != null
+                              ? DateTime.parse(debt['created_at'])
+                              : null;
 
                       return DataRow(
                         cells: [
-                          DataCell(
-                            SizedBox(
-                              width: columnWidth,
-                              child: Text(
-                                debt['details'],
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 2,
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          ),
                           DataCell(
                             SizedBox(
                               width: columnWidth,
@@ -1050,7 +1411,7 @@ class _DebtsPageState extends State<DebtsPage> {
                             SizedBox(
                               width: columnWidth,
                               child: Text(
-                                debt['material'],
+                                debt['item'],
                                 overflow: TextOverflow.ellipsis,
                                 maxLines: 2,
                                 textAlign: TextAlign.center,
@@ -1061,7 +1422,7 @@ class _DebtsPageState extends State<DebtsPage> {
                             SizedBox(
                               width: columnWidth,
                               child: Text(
-                                debt['quantity'].toString(),
+                                NumberFormatter.formatPrice(quantity),
                                 textAlign: TextAlign.center,
                               ),
                             ),
@@ -1070,10 +1431,11 @@ class _DebtsPageState extends State<DebtsPage> {
                             SizedBox(
                               width: columnWidth,
                               child: Text(
-                                '${(debt['price'] is int ? debt['price'] : int.tryParse(debt['price'].toString()) ?? 0).toString()} $currencySymbol',
+                                '${NumberFormatter.formatPrice(price)} $currencySymbol',
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
+                                  fontSize: 11,
                                 ),
                               ),
                             ),
@@ -1082,12 +1444,25 @@ class _DebtsPageState extends State<DebtsPage> {
                             SizedBox(
                               width: columnWidth,
                               child: Text(
-                                '${totalPrice.toStringAsFixed(0)} $currencySymbol',
+                                '${NumberFormatter.formatPrice(totalPrice)} $currencySymbol',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
+                                  fontSize: 11,
                                   color: isOwed ? Colors.red : Colors.green,
                                 ),
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            SizedBox(
+                              width: columnWidth,
+                              child: Text(
+                                createdAt != null
+                                    ? '${createdAt.day}/${createdAt.month}/${createdAt.year}'
+                                    : '',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 11),
                               ),
                             ),
                           ),
@@ -1166,6 +1541,7 @@ class _DebtsPageState extends State<DebtsPage> {
 
     Map<int, Map<String, double>> currencyTotals = {};
 
+    // First calculate totals in their original currencies
     for (var debt in _debts) {
       final currencyId = debt['currency_id'];
       final quantity =
@@ -1207,10 +1583,26 @@ class _DebtsPageState extends State<DebtsPage> {
         (c) => c['id'] == entry.key,
         orElse: () => {'id': 1, 'price': 1.0},
       );
-      final conversionRate = currency['price'] ?? 1.0;
-      totalOwedInSP += entry.value['owed']! * conversionRate;
-      totalOwingInSP += entry.value['owing']! * conversionRate;
+
+      // Get the exchange rate for this currency
+      final exchangeRate = currency['price'] ?? 1.0;
+
+      // Convert the amounts to SP using the exchange rate
+      final owedInSP = entry.value['owed']! * exchangeRate;
+      final owingInSP = entry.value['owing']! * exchangeRate;
+
+      totalOwedInSP += owedInSP;
+      totalOwingInSP += owingInSP;
+
+      print('Currency ${currency['code']}:');
+      print('  Exchange Rate: $exchangeRate');
+      print('  Owed: ${entry.value['owed']} -> $owedInSP SP');
+      print('  Owing: ${entry.value['owing']} -> $owingInSP SP');
     }
+
+    print('Total in SP:');
+    print('  Total Owed: $totalOwedInSP SP');
+    print('  Total Owing: $totalOwingInSP SP');
 
     _cachedTotalOwedInSP = totalOwedInSP;
     _cachedTotalOwingInSP = totalOwingInSP;
@@ -1272,7 +1664,7 @@ class _DebtsPageState extends State<DebtsPage> {
               ),
               const Spacer(),
               DropdownButton<int>(
-                value: _selectedSummaryCurrencyId,
+                value: _selectedSummaryCurrencyId ?? defaultCurrencyId,
                 items: [
                   DropdownMenuItem<int>(
                     value: ALL_CURRENCIES_ID,
@@ -1282,8 +1674,10 @@ class _DebtsPageState extends State<DebtsPage> {
                     ),
                   ),
                   ..._currencies.map((currency) {
+                    // Ensure each currency has a unique ID
+                    final currencyId = currency['id'] as int;
                     return DropdownMenuItem<int>(
-                      value: currency['id'],
+                      value: currencyId,
                       child: Text(
                         '${currency['code']} (${currency['symbol']})',
                         style: const TextStyle(fontSize: 16),
@@ -1292,9 +1686,11 @@ class _DebtsPageState extends State<DebtsPage> {
                   }),
                 ],
                 onChanged: (value) {
-                  setState(() {
-                    _selectedSummaryCurrencyId = value;
-                  });
+                  if (value != null) {
+                    setState(() {
+                      _selectedSummaryCurrencyId = value;
+                    });
+                  }
                 },
                 underline: Container(height: 2, color: Colors.blue),
               ),
@@ -1359,8 +1755,8 @@ class _DebtsPageState extends State<DebtsPage> {
                                         Text(
                                           _selectedSummaryCurrencyId ==
                                                   ALL_CURRENCIES_ID
-                                              ? '${totalOwedInSP.toStringAsFixed(0)} SP'
-                                              : '${(currencyTotals[_selectedSummaryCurrencyId]?['owed'] ?? 0.0).toStringAsFixed(0)} ${_currencies.firstWhere((c) => c['id'] == _selectedSummaryCurrencyId, orElse: () => {'symbol': 'SP'})['symbol']}',
+                                              ? '${NumberFormatter.formatPrice(totalOwedInSP)} SP'
+                                              : '${NumberFormatter.formatPrice(currencyTotals[_selectedSummaryCurrencyId]?['owed'] ?? 0.0)} ${_currencies.firstWhere((c) => c['id'] == _selectedSummaryCurrencyId, orElse: () => {'symbol': 'SP'})['symbol']}',
                                           style: const TextStyle(
                                             color: Colors.red,
                                             fontSize: 16,
@@ -1393,8 +1789,8 @@ class _DebtsPageState extends State<DebtsPage> {
                                         Text(
                                           _selectedSummaryCurrencyId ==
                                                   ALL_CURRENCIES_ID
-                                              ? '${totalOwingInSP.toStringAsFixed(0)} SP'
-                                              : '${(currencyTotals[_selectedSummaryCurrencyId]?['owing'] ?? 0.0).toStringAsFixed(0)} ${_currencies.firstWhere((c) => c['id'] == _selectedSummaryCurrencyId, orElse: () => {'symbol': 'SP'})['symbol']}',
+                                              ? '${NumberFormatter.formatPrice(totalOwingInSP)} SP'
+                                              : '${NumberFormatter.formatPrice(currencyTotals[_selectedSummaryCurrencyId]?['owing'] ?? 0.0)} ${_currencies.firstWhere((c) => c['id'] == _selectedSummaryCurrencyId, orElse: () => {'symbol': 'SP'})['symbol']}',
                                           style: const TextStyle(
                                             color: Colors.green,
                                             fontSize: 16,
@@ -1415,6 +1811,16 @@ class _DebtsPageState extends State<DebtsPage> {
                                 decoration: BoxDecoration(
                                   color:
                                       (_selectedSummaryCurrencyId ==
+                                                      ALL_CURRENCIES_ID
+                                                  ? (totalOwingInSP -
+                                                      totalOwedInSP)
+                                                  : ((currencyTotals[_selectedSummaryCurrencyId]?['owing'] ??
+                                                          0.0) -
+                                                      (currencyTotals[_selectedSummaryCurrencyId]?['owed'] ??
+                                                          0.0))) ==
+                                              0
+                                          ? Colors.grey[100]
+                                          : (_selectedSummaryCurrencyId ==
                                                       ALL_CURRENCIES_ID
                                                   ? (totalOwingInSP -
                                                       totalOwedInSP)
@@ -1442,6 +1848,16 @@ class _DebtsPageState extends State<DebtsPage> {
                                                         : ((currencyTotals[_selectedSummaryCurrencyId]?['owing'] ??
                                                                 0.0) -
                                                             (currencyTotals[_selectedSummaryCurrencyId]?['owed'] ??
+                                                                0.0))) ==
+                                                    0
+                                                ? Colors.grey[800]
+                                                : (_selectedSummaryCurrencyId ==
+                                                            ALL_CURRENCIES_ID
+                                                        ? (totalOwingInSP -
+                                                            totalOwedInSP)
+                                                        : ((currencyTotals[_selectedSummaryCurrencyId]?['owing'] ??
+                                                                0.0) -
+                                                            (currencyTotals[_selectedSummaryCurrencyId]?['owed'] ??
                                                                 0.0))) >
                                                     0
                                                 ? Colors.green[800]
@@ -1452,11 +1868,21 @@ class _DebtsPageState extends State<DebtsPage> {
                                     Text(
                                       _selectedSummaryCurrencyId ==
                                               ALL_CURRENCIES_ID
-                                          ? '${(totalOwingInSP - totalOwedInSP).toStringAsFixed(0)} SP'
-                                          : '${((currencyTotals[_selectedSummaryCurrencyId]?['owing'] ?? 0.0) - (currencyTotals[_selectedSummaryCurrencyId]?['owed'] ?? 0.0)).toStringAsFixed(0)} ${_currencies.firstWhere((c) => c['id'] == _selectedSummaryCurrencyId, orElse: () => {'symbol': 'SP'})['symbol']}',
+                                          ? '${NumberFormatter.formatPrice(totalOwingInSP - totalOwedInSP)} SP'
+                                          : '${NumberFormatter.formatPrice((currencyTotals[_selectedSummaryCurrencyId]?['owing'] ?? 0.0) - (currencyTotals[_selectedSummaryCurrencyId]?['owed'] ?? 0.0))} ${_currencies.firstWhere((c) => c['id'] == _selectedSummaryCurrencyId, orElse: () => {'symbol': 'SP'})['symbol']}',
                                       style: TextStyle(
                                         color:
                                             (_selectedSummaryCurrencyId ==
+                                                            ALL_CURRENCIES_ID
+                                                        ? (totalOwingInSP -
+                                                            totalOwedInSP)
+                                                        : ((currencyTotals[_selectedSummaryCurrencyId]?['owing'] ??
+                                                                0.0) -
+                                                            (currencyTotals[_selectedSummaryCurrencyId]?['owed'] ??
+                                                                0.0))) ==
+                                                    0
+                                                ? Colors.grey[800]
+                                                : (_selectedSummaryCurrencyId ==
                                                             ALL_CURRENCIES_ID
                                                         ? (totalOwingInSP -
                                                             totalOwedInSP)

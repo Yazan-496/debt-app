@@ -52,6 +52,12 @@ class MyDrawer extends StatelessWidget {
           ),
           _buildDrawerItem(
             context,
+            icon: Icons.inventory_2,
+            title: languageProvider.translate('items.title'),
+            route: '/items',
+          ),
+          _buildDrawerItem(
+            context,
             icon: Icons.money,
             title: languageProvider.translate('debts.title'),
             route: '/debts',

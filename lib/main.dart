@@ -7,6 +7,7 @@ import 'screens/settings_page.dart';
 import 'screens/debts_page.dart';
 import 'screens/users_page.dart';
 import 'screens/currencies_page.dart';
+import 'screens/items_page.dart';
 import 'theme/app_theme.dart';
 import 'providers/language_provider.dart';
 
@@ -60,6 +61,7 @@ class MyApp extends StatelessWidget {
               '/users': (context) => const UsersPage(),
               '/currencies': (context) => const CurrenciesPage(),
               '/currency': (context) => const CurrenciesPage(),
+              '/items': (context) => const ItemsPage(),
             },
           );
         },

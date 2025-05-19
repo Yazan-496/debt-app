@@ -18,7 +18,9 @@
     "no_data": "No data available",
     "created_at": "Created At",
     "actions": "Actions",
-    "currency": "Currency"
+    "currency": "Currency",
+    "required_field": "Required field",
+    "invalid_number": "Please enter a valid number"
   },
   "settings": {
     "title": "Settings",
@@ -53,6 +55,7 @@
     "user_details": "User Details",
     "name": "Name",
     "phone": "Phone",
+    "name_already_exists": "User name already exists",
     "no_users": "No users available"
   },
   "debts": {
@@ -60,7 +63,7 @@
     "details": "Details",
     "name": "Name",
     "phone": "Phone Number",
-    "material": "Material",
+    "item": "Item",
     "quantity": "Quantity",
     "price": "Price",
     "currency": "Currency",
@@ -94,6 +97,20 @@
     "code": "Code",
     "symbol": "Symbol",
     "price": "Price (in SP)",
-    "no_currencies": "No currencies available"
+    "no_currencies": "No currencies available",
+    "cannot_delete_default": "Cannot delete default currencies ($ and SP)"
+  },
+  "items": {
+    "title": "Items",
+    "name": "Name",
+    "price_dollar": "Price (USD)",
+    "price_sp": "Price (SP)",
+    "add_item": "Add Item",
+    "edit_item": "Edit Item",
+    "delete_item": "Delete Item",
+    "delete_item_confirmation": "Are you sure you want to delete this item?",
+    "no_items": "No items found",
+    "at_least_one_price_required": "Please enter at least one price",
+    "name_already_exists": "Item name already exists"
   }
 }

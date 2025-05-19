@@ -4,6 +4,7 @@ import '../providers/language_provider.dart';
 import '../database/database_helper.dart';
 import '../widgets/table_widget.dart';
 import '../widgets/dialog_widget.dart';
+import '../utils/number_formatter.dart';
 import 'package:provider/provider.dart';
 
 class CurrenciesPage extends StatefulWidget {
@@ -144,12 +145,14 @@ class _CurrenciesPageState extends State<CurrenciesPage> {
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    keyboardType: TextInputType.number,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Required';
                       }
-                      if (int.tryParse(value) == null) {
+                      if (double.tryParse(value) == null) {
                         return 'Please enter a valid number';
                       }
                       return null;
@@ -175,7 +178,7 @@ class _CurrenciesPageState extends State<CurrenciesPage> {
                       'name': _nameController.text,
                       'code': _codeController.text,
                       'symbol': _symbolController.text,
-                      'price': int.parse(_priceController.text),
+                      'price': double.parse(_priceController.text),
                     };
 
                     if (_editingIndex != null) {
@@ -206,6 +209,21 @@ class _CurrenciesPageState extends State<CurrenciesPage> {
       context,
       listen: false,
     );
+
+    // Check if currency symbol is '$' or 'sp'
+    final currencySymbol = _currencies[index]['symbol'];
+    if (currencySymbol == '\$' || currencySymbol.toLowerCase() == 'sp') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            languageProvider.translate('currencies.cannot_delete_default'),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final title = languageProvider.translate('currencies.delete_currency');
     final content = languageProvider.translate(
       'currencies.delete_currency_confirmation',
@@ -355,7 +373,7 @@ class _CurrenciesPageState extends State<CurrenciesPage> {
                 SizedBox(
                   width: columnWidth,
                   child: Text(
-                    (currency['price'] ?? 0).toString(),
+                    NumberFormatter.formatPrice(currency['price']),
                     overflow: TextOverflow.ellipsis,
                     maxLines: 2,
                     textAlign: TextAlign.center,

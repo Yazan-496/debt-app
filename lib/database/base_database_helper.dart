@@ -1,24 +1,13 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
-import 'base_database_helper.dart';
-import 'user_operations.dart';
-import 'debt_operations.dart';
-import 'currency_operations.dart';
-import 'item_operations.dart';
 
-class DatabaseHelper {
-  static final DatabaseHelper _instance = DatabaseHelper._internal();
+class BaseDatabaseHelper {
+  static final BaseDatabaseHelper _instance = BaseDatabaseHelper._internal();
   static Database? _database;
 
-  final BaseDatabaseHelper _baseHelper = BaseDatabaseHelper();
-  final UserOperations _userOps = UserOperations();
-  final DebtOperations _debtOps = DebtOperations();
-  final CurrencyOperations _currencyOps = CurrencyOperations();
-  final ItemOperations _itemOps = ItemOperations();
+  factory BaseDatabaseHelper() => _instance;
 
-  factory DatabaseHelper() => _instance;
-
-  DatabaseHelper._internal();
+  BaseDatabaseHelper._internal();
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -31,7 +20,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -86,10 +75,9 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE debts(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        details TEXT NOT NULL,
+        details TEXT,
         user_id INTEGER NOT NULL,
         item_id INTEGER NOT NULL,
-        item TEXT NOT NULL,
         quantity INTEGER NOT NULL,
         price INTEGER NOT NULL,
         currency_id INTEGER NOT NULL,
@@ -97,7 +85,7 @@ class DatabaseHelper {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
         FOREIGN KEY (currency_id) REFERENCES currencies (id),
-        FOREIGN KEY (item_id) REFERENCES items (id)
+        FOREIGN KEY (item_id) REFERENCES items (id) ON DELETE CASCADE
       )
     ''');
 
@@ -133,12 +121,13 @@ class DatabaseHelper {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           details TEXT NOT NULL,
           user_id INTEGER NOT NULL,
-          item TEXT NOT NULL,
+          item_id INTEGER NOT NULL,
           quantity REAL NOT NULL,
           price REAL NOT NULL,
           is_owed INTEGER NOT NULL DEFAULT 1,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+          FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+          FOREIGN KEY (item_id) REFERENCES items (id) ON DELETE CASCADE
         )
       ''');
 
@@ -157,7 +146,7 @@ class DatabaseHelper {
         await db.insert('debts_new', {
           'details': debt['details'],
           'user_id': userId,
-          'item': debt['item'],
+          'item_id': debt['item_id'],
           'quantity': debt['quantity'],
           'price': debt['price'],
           'is_owed': 1, // Default value for existing debts
@@ -239,23 +228,53 @@ class DatabaseHelper {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           details TEXT NOT NULL,
           user_id INTEGER NOT NULL,
-          item TEXT NOT NULL,
+          item_id INTEGER NOT NULL,
           quantity REAL NOT NULL,
           price REAL NOT NULL,
           currency_id INTEGER NOT NULL,
           is_owed INTEGER NOT NULL DEFAULT 1,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-          FOREIGN KEY (currency_id) REFERENCES currencies (id)
+          FOREIGN KEY (currency_id) REFERENCES currencies (id),
+          FOREIGN KEY (item_id) REFERENCES items (id) ON DELETE CASCADE
         )
       ''');
 
-      // Copy data from old table to new table
-      await db.execute('''
-        INSERT INTO debts_new
-        SELECT id, details, user_id, item, CAST(quantity AS REAL), price, currency_id, is_owed, created_at
-        FROM debts
-      ''');
+      // Get all existing debts
+      List<Map<String, dynamic>> oldDebts = await db.query('debts');
+
+      // For each debt, create or find the item and update the debt
+      for (var debt in oldDebts) {
+        // Find or create the item
+        List<Map<String, dynamic>> existingItems = await db.query(
+          'items',
+          where: 'name = ?',
+          whereArgs: [debt['item']],
+        );
+
+        int itemId;
+        if (existingItems.isEmpty) {
+          // Create new item if it doesn't exist
+          itemId = await db.insert('items', {
+            'name': debt['item'],
+            'created_at': debt['created_at'],
+          });
+        } else {
+          itemId = existingItems.first['id'];
+        }
+
+        // Insert debt with new item_id
+        await db.insert('debts_new', {
+          'details': debt['details'],
+          'user_id': debt['user_id'],
+          'item_id': itemId,
+          'quantity': debt['quantity'],
+          'price': debt['price'],
+          'currency_id': debt['currency_id'],
+          'is_owed': debt['is_owed'],
+          'created_at': debt['created_at'],
+        });
+      }
 
       // Drop old table
       await db.execute('DROP TABLE debts');
@@ -264,39 +283,4 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE debts_new RENAME TO debts');
     }
   }
-
-  // User operations
-  Future<int> insertUser(Map<String, dynamic> user) =>
-      _userOps.insertUser(user);
-  Future<List<Map<String, dynamic>>> getUsers() => _userOps.getUsers();
-  Future<int> updateUser(int id, Map<String, dynamic> user) =>
-      _userOps.updateUser(id, user);
-  Future<int> deleteUser(int id) => _userOps.deleteUser(id);
-  Future<Map<String, dynamic>?> getUserById(int id) => _userOps.getUserById(id);
-
-  // Debt operations
-  Future<int> insertDebt(Map<String, dynamic> debt) =>
-      _debtOps.insertDebt(debt);
-  Future<List<Map<String, dynamic>>> getDebts() => _debtOps.getDebts();
-  Future<int> updateDebt(int id, Map<String, dynamic> debt) =>
-      _debtOps.updateDebt(id, debt);
-  Future<int> deleteDebt(int id) => _debtOps.deleteDebt(id);
-
-  // Currency operations
-  Future<int> insertCurrency(Map<String, dynamic> currency) =>
-      _currencyOps.insertCurrency(currency);
-  Future<List<Map<String, dynamic>>> getCurrencies() =>
-      _currencyOps.getCurrencies();
-  Future<int> updateCurrency(int id, Map<String, dynamic> currency) =>
-      _currencyOps.updateCurrency(id, currency);
-  Future<int> deleteCurrency(int id) => _currencyOps.deleteCurrency(id);
-
-  // Item operations
-  Future<int> insertItem(Map<String, dynamic> item) =>
-      _itemOps.insertItem(item);
-  Future<List<Map<String, dynamic>>> getItems() => _itemOps.getItems();
-  Future<int> updateItem(int id, Map<String, dynamic> item) =>
-      _itemOps.updateItem(id, item);
-  Future<int> deleteItem(int id) => _itemOps.deleteItem(id);
-  Future<Map<String, dynamic>?> getItemById(int id) => _itemOps.getItemById(id);
 }

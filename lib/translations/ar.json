@@ -18,7 +18,9 @@
     "no_data": "لا توجد بيانات متاحة",
     "created_at": "تاريخ الإنشاء",
     "actions": "الإجراءات",
-    "currency": "العملة"
+    "currency": "العملة",
+    "required_field": "الحقل مطلوب",
+    "invalid_number": "الرجاء إدخال رقم صحيح"
   },
   "settings": {
     "title": "الإعدادات",
@@ -53,13 +55,14 @@
     "user_details": "تفاصيل المستخدم",
     "name": "الاسم",
     "phone": "رقم الهاتف",
+    "name_already_exists": "اسم المستخدم موجود مسبقاً",
     "no_users": "لا يوجد مستخدمين متاحين"
   },
   "debts": {
     "title": "الديون",
     "details": "التفاصيل",
     "name": "الاسم",
-    "material": "المادة",
+    "item": "المنتج",
     "quantity": "الكمية",
     "price": "السعر",
     "currency": "العملة",
@@ -93,6 +96,19 @@
     "code": "الرمز",
     "symbol": "الرمز المالي",
     "price": "السعر (بالليرة السورية)",
-    "no_currencies": "لا توجد عملات متاحة"
+    "no_currencies": "لا توجد عملات متاحة",
+    "cannot_delete_default": "لا يمكن حذف العملات الافتراضية ($ و SP)"
+  },
+  "items": {
+    "title": "المنتجات",
+    "name": "الاسم",
+    "price": "السعر",
+    "add_item": "إضافة منتج",
+    "edit_item": "تعديل المنتج",
+    "delete_item": "حذف المنتج",
+    "delete_item_confirmation": "هل أنت متأكد من حذف هذا المنتج؟",
+    "no_items": "لا توجد منتجات",
+    "at_least_one_price_required": "الرجاء إدخال سعر واحد على الأقل",
+    "name_already_exists": "اسم المنتج موجود مسبقاً"
   }
 }
