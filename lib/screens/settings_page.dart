@@ -3,6 +3,7 @@ import '../theme/app_theme.dart';
 import '../widgets/base_screen.dart';
 import '../providers/language_provider.dart';
 import 'package:provider/provider.dart';
+import 'backup_settings_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -71,6 +72,22 @@ class SettingsPage extends StatelessWidget {
                       'settings.language_subtitle',
                     ),
                     onTap: () => _showLanguageDialog(context),
+                  ),
+                  const Divider(),
+                  _buildSettingItem(
+                    icon: Icons.backup,
+                    title: languageProvider.translate('settings.backup'),
+                    subtitle: languageProvider.translate(
+                      'settings.backup_subtitle',
+                    ),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const BackupSettingsPage(),
+                        ),
+                      );
+                    },
                   ),
                   const Divider(),
                   _buildSettingItem(
